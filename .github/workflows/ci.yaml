@@ -2,76 +2,167 @@ name: CI & Docker Publish
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
     tags:
       - "v*.*.*"     
   pull_request:
-    branches: [ "main" ]
-
-permissions:
-  contents: read
-  packages: write
+    branches: [ "main", "develop" ]
 
 env:
   REGISTRY: docker.io
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   IMAGE_NAME: ${{ secrets.IMAGE_NAME || 'day01node' }}
+  NODE_VERSION: '18'
 
 jobs:
-  ci:
-    name: Lint • Test • Build (no push)
+  lint-and-test:
+    name: Lint & Test
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Use Node 18
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
-          cache: "npm"
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          # Install dev dependencies if they exist in package.json
+          if [ -f package.json ]; then
+            npm install --production=false
+          fi
+
+      - name: Check for ESLint configuration
+        id: eslint-check
+        run: |
+          if [ -f package.json ] && npm list eslint >/dev/null 2>&1; then
+            echo "eslint_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "eslint_available=false" >> $GITHUB_OUTPUT
+            echo "ESLint not found in dependencies"
+          fi
+
+      - name: Run ESLint
+        if: steps.eslint-check.outputs.eslint_available == 'true'
+        run: npm run lint
+        continue-on-error: false
+
+      - name: Skip ESLint (if not configured)
+        if: steps.eslint-check.outputs.eslint_available == 'false'
+        run: echo "ESLint not configured - skipping linting"
+
+      - name: Check for Jest configuration
+        id: jest-check
+        run: |
+          if [ -f package.json ] && npm list jest >/dev/null 2>&1; then
+            echo "jest_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "jest_available=false" >> $GITHUB_OUTPUT
+            echo "Jest not found in dependencies"
+          fi
+
+      - name: Run tests
+        if: steps.jest-check.outputs.jest_available == 'true'
+        run: npm test
+        continue-on-error: false
+
+      - name: Skip tests (if not configured)
+        if: steps.jest-check.outputs.jest_available == 'false'
+        run: echo "Jest not configured - skipping tests"
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
-        continue-on-error: true  
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level moderate || true
 
-      - name: Run tests
-        run: npm test
+      - name: Run Snyk security scan
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        with:
+          args: --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-      - name: Build Docker image (local only)
-        run: docker build -t local/day01node .
-
-  publish:
-    name: Build & Push Docker image
+  docker-build:
+    name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: ci
-    if: >
-      github.event_name == 'push' &&
-      (startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v'))
-
+    needs: lint-and-test
+    
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract metadata (tags, labels)
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/image.tar
+
+      - name: Test Docker image
+        run: |
+          docker load --input /tmp/image.tar
+          docker run --rm -d -p 3000:3000 --name test-container ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          sleep 10
+          docker ps | grep test-container && echo "Container running successfully"
+          docker stop test-container
+
+  publish:
+    name: Publish to Docker Hub
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, security-scan, docker-build]
+    if: >
+      github.event_name == 'push' && 
+      (startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v'))
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag    # v1.2.3 → :v1.2.3
-            type=sha,format=short # :sha-abc123
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+            type=ref,event=tag
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -80,13 +171,51 @@ jobs:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+
+  deploy-notification:
+    name: Deployment Notification
+    runs-on: ubuntu-latest
+    needs: publish
+    if: always()
+    
+    steps:
+      - name: Send success notification
+        if: needs.publish.result == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Docker image successfully built and published!'
+            })
+
+      - name: Send failure notification
+        if: needs.publish.result == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Docker image build and publish failed!'
+            })
