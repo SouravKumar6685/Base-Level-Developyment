@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "jest"
+    "lint": "eslint .",
+    "test": "jest --ci --runInBand",
+    "test:ci": "jest --ci --coverage",
+    "build": "echo \"(optional) compile step\""
   },
   "keywords": [],
   "author": "",
