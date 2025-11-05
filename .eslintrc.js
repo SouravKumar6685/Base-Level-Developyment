@@ -1,17 +1,16 @@
 module.exports = {
   env: {
     node: true,
+    commonjs: true,
     es2021: true,
-    jest: true
+    jest: true,
   },
-  extends: ['eslint:recommended'],
+  extends: ['standard'],
   parserOptions: {
     ecmaVersion: 'latest',
-    sourceType: 'module'
   },
   rules: {
-    'no-unused-vars': 'warn',
-    'no-console': 'off'
+    'comma-dangle': ['error', 'only-multiline'],
+    'space-before-function-paren': ['error', 'never']
   },
-  ignorePatterns: ['node_modules/', 'coverage/']
-};
+}
