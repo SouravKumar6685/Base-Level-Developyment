@@ -88,7 +88,6 @@ jobs:
         tags: |
           ${{ env.DOCKER_IMAGE }}:latest
           ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
-          ${{ env.DOCKER_IMAGE }}:${{ github.ref_name }}
 
     - name: Test Docker image
       run: |
@@ -113,7 +112,6 @@ jobs:
       run: |
         echo "🚀 Deploying to staging environment..."
         echo "📦 Image: ${{ env.DOCKER_IMAGE }}:latest"
-        echo "🌿 Branch: ${{ github.ref }}"
         echo "🔑 SHA: ${{ github.sha }}"
         
         # Simulate deployment commands
