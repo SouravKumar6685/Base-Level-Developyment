@@ -14,7 +14,8 @@ describe('Controllers', () => {
       const response = await request(app).get('/users/1')
       expect(response.status).toBe(200)
       expect(response.body).toHaveProperty('id')
-      expect(response.body.id).toBe('1')
+      // CHANGE: Expect number instead of string
+      expect(response.body.id).toBe(1)
     })
 
     it('should return 404 for non-existent user', async() => {
@@ -36,7 +37,8 @@ describe('Controllers', () => {
       const response = await request(app).get('/products/1')
       expect(response.status).toBe(200)
       expect(response.body).toHaveProperty('id')
-      expect(response.body.id).toBe('1')
+      // CHANGE: Expect number instead of string
+      expect(response.body.id).toBe(1)
     })
 
     it('should return 404 for non-existent product', async() => {
