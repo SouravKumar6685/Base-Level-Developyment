@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: stagging
+  name: day01-node-app
+  labels:
+    app: day01-node-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: day01-node-app
+  template:
+    metadata:
+      labels:
+        app: day01-node-app
+    spec:
+      containers:
+        - name: day01-node-app
+          image: souravkumar6685/day01node
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3000"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
