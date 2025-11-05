@@ -10,4 +10,11 @@ router.get('/', homeController.getHome)
 router.use('/users', userRoutes)
 router.use('/products', productRoutes)
 
+router.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString()
+  })
+})
+
 module.exports = router
