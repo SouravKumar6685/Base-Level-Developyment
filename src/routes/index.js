@@ -1,13 +1,13 @@
-const express = require('express');
-const router = express.Router();
+const express = require('express')
+const router = express.Router()
 
-const userRoutes = require('./userRoutes');
-const productRoutes = require('./productRoutes');
-const homeController = require('../controllers/homeController');
+const userRoutes = require('./userRoutes')
+const productRoutes = require('./productRoutes')
+const homeController = require('../controllers/homeController')
 
-router.get('/', homeController.getHome);
+router.get('/', homeController.getHome)
 
-router.use('/users', userRoutes);
-router.use('/products', productRoutes);
+router.use('/users', userRoutes)
+router.use('/products', productRoutes)
 
-module.exports = router;
+module.exports = router
