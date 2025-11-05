@@ -1,17 +1,23 @@
-FROM node:18-alpine AS base
+FROM node:18-alpine
+
 WORKDIR /app
+
+# Copy package files
 COPY package*.json ./
-RUN npm ci --omit=dev=false
-COPY . .
-RUN npm test
 
-FROM node:18-alpine AS runtime
-WORKDIR /app
-
-ENV NODE_ENV=production
-COPY --from=base /app/package*.json ./
+# Install dependencies
 RUN npm ci --only=production
-COPY --from=base /app/src ./src
-USER node
+
+# Copy source code
+COPY src/ ./src/
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejs -u 1001
+USER nodejs
+
+# Expose port
 EXPOSE 3000
-CMD ["node","src/app.js"]
+
+# Start application
+CMD ["node", "src/app.js"]
